@@ -4,32 +4,49 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hafıza Ustası Pro</title>
-    <!-- CSS Kütüphaneleri -->
+    <!-- PWA Bağlantısı -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4f46e5">
+    
+    <!-- Kütüphaneler -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React ve Babel -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
     <style>
         .no-scrollbar::-webkit-scrollbar { display: none; }
+        .practice-area { transition: all 0.3s ease; }
         input[type="range"] { accent-color: #4f46e5; }
+        .blur-word { filter: blur(4px); background: #e2e8f0; color: transparent; border-radius: 4px; user-select: none; }
     </style>
 </head>
-<body class="bg-slate-50">
+<body class="bg-slate-50 transition-colors duration-500">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useCallback } = React;
+        const { useState, useEffect, useCallback, useMemo } = React;
 
         function App() {
-            const [mode, setMode] = useState('input');
+            // Uygulama Durumları
+            const [mode, setMode] = useState('input'); // input, practice
+            const [practiceType, setPracticeType] = useState('cloze'); // cloze, firstLetter, fill, quiz
             const [content, setContent] = useState('');
             const [title, setTitle] = useState('');
             const [difficulty, setDifficulty] = useState(30);
             const [fontSize, setFontSize] = useState(18);
+            const [theme, setTheme] = useState('indigo');
             const [isSpeaking, setIsSpeaking] = useState(false);
+            const [quizData, setQuizData] = useState(null);
 
-            // Sesli Okuma Fonksiyonu
+            const themes = {
+                indigo: 'bg-indigo-600',
+                emerald: 'bg-emerald-600',
+                rose: 'bg-rose-600',
+                slate: 'bg-slate-800'
+            };
+
+            // Sesli Okuma (TTS)
             const speak = () => {
                 if (isSpeaking) {
                     window.speechSynthesis.cancel();
@@ -38,102 +55,145 @@
                 }
                 const utterance = new SpeechSynthesisUtterance(content);
                 utterance.lang = 'tr-TR';
+                utterance.rate = 0.9;
                 utterance.onend = () => setIsSpeaking(false);
                 window.speechSynthesis.speak(utterance);
                 setIsSpeaking(true);
             };
 
-            // İçerik Oluşturucu (Kelimeleri Gizleme)
-            const renderText = () => {
+            // Test Modu İçin Soru Oluşturma
+            const generateQuestion = useCallback(() => {
+                const words = content.split(/\s+/).filter(w => w.length > 3);
+                if (words.length < 5) return;
+                const randomIdx = Math.floor(Math.random() * words.length);
+                const correct = words[randomIdx].replace(/[.,!?;]/g, "");
+                const options = [correct, "elma", "masa", "bulut"].sort(() => Math.random() - 0.5);
+                setQuizData({
+                    context: `"... ${words.slice(Math.max(0, randomIdx-2), randomIdx).join(" ")} [ ? ] ${words.slice(randomIdx+1, randomIdx+3).join(" ")} ..."`,
+                    correct: correct,
+                    options: options
+                });
+            }, [content]);
+
+            useEffect(() => {
+                if (practiceType === 'quiz') generateQuestion();
+            }, [practiceType, generateQuestion]);
+
+            // Metin Render Motoru
+            const renderPractice = () => {
+                if (practiceType === 'quiz' && quizData) {
+                    return (
+                        <div className="space-y-6 animate-pulse-once">
+                            <div className="p-6 bg-slate-100 rounded-2xl text-center italic text-xl">
+                                {quizData.context}
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                {quizData.options.map((opt, i) => (
+                                    <button 
+                                        key={i}
+                                        onClick={() => opt === quizData.correct ? generateQuestion() : alert("Yanlış!")}
+                                        className="p-4 bg-white border-2 border-slate-200 rounded-xl hover:border-indigo-500 font-bold"
+                                    >
+                                        {opt}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                }
+
                 return content.split('\n').map((line, i) => (
-                    <div key={i} className="mb-4 flex flex-wrap gap-2">
+                    <div key={i} className="mb-4 flex flex-wrap gap-x-2">
                         {line.split(/\s+/).map((word, j) => {
-                            const isHidden = ( (i + 1) * (j + 1) * 31 ) % 100 < difficulty;
-                            return (
-                                <span 
-                                    key={j} 
-                                    className={`px-1 rounded transition-all duration-300 ${isHidden ? 'bg-slate-200 text-transparent blur-sm select-none' : 'text-slate-800'}`}
-                                >
-                                    {word}
-                                </span>
-                            );
+                            const isHidden = ((i + 1) * (j + 1) * 31) % 100 < difficulty;
+                            
+                            if (practiceType === 'firstLetter') {
+                                return <span key={j}>{isHidden ? word[0] + '.'.repeat(word.length-1) : word}</span>;
+                            }
+                            if (practiceType === 'cloze' && isHidden) {
+                                return <span key={j} className="blur-word px-1">{word}</span>;
+                            }
+                            if (practiceType === 'fill' && isHidden) {
+                                return <input key={j} type="text" className="border-b-2 border-indigo-400 w-16 outline-none text-center" placeholder="?" />;
+                            }
+                            return <span key={j}>{word}</span>;
                         })}
                     </div>
                 ));
             };
 
             return (
-                <div className="min-h-screen pb-32">
-                    {/* Navbar */}
-                    <nav className="bg-indigo-600 p-4 text-white shadow-lg sticky top-0 z-50">
+                <div className="min-h-screen pb-40">
+                    <nav className={`${themes[theme]} p-4 text-white shadow-xl sticky top-0 z-50`}>
                         <div className="max-w-4xl mx-auto flex justify-between items-center">
-                            <h1 className="font-bold text-xl tracking-tight">🧠 Hafıza Ustası</h1>
+                            <h1 className="font-bold text-xl tracking-tighter">🧠 HAFIZA USTASI PRO</h1>
                             {mode === 'practice' && (
-                                <button 
-                                    onClick={() => setMode('input')} 
-                                    className="bg-white/20 px-4 py-2 rounded-xl text-sm font-bold"
-                                >
-                                    Geri Dön
-                                </button>
+                                <button onClick={() => setMode('input')} className="bg-white/20 px-4 py-2 rounded-lg font-bold text-sm">YENİ METİN</button>
                             )}
                         </div>
                     </nav>
 
                     <main className="max-w-4xl mx-auto p-4 mt-6">
                         {mode === 'input' ? (
-                            <div className="bg-white p-6 rounded-3xl shadow-xl space-y-4">
+                            <div className="bg-white p-6 rounded-3xl shadow-xl space-y-4 border border-slate-200">
                                 <input 
-                                    className="w-full text-2xl font-bold border-none outline-none" 
-                                    placeholder="Metin Başlığı..." 
-                                    value={title}
-                                    onChange={e => setTitle(e.target.value)} 
+                                    className="w-full text-2xl font-bold outline-none" 
+                                    placeholder="Başlık (Şiir, Not, Ayet...)" 
+                                    onChange={e => setTitle(e.target.value)}
                                 />
                                 <textarea 
-                                    className="w-full h-80 border-none outline-none resize-none text-lg text-slate-600" 
-                                    placeholder="Ezberlenecek metni buraya yapıştırın..." 
-                                    value={content}
-                                    onChange={e => setContent(e.target.value)} 
+                                    className="w-full h-80 outline-none resize-none text-lg" 
+                                    placeholder="Metni buraya ekleyin..." 
+                                    onChange={e => setContent(e.target.value)}
                                 />
+                                <div className="flex gap-2">
+                                    {Object.keys(themes).map(t => (
+                                        <button key={t} onClick={() => setTheme(t)} className={`${themes[t]} w-8 h-8 rounded-full border-2 border-white shadow-md`}></button>
+                                    ))}
+                                </div>
                                 <button 
-                                    onClick={() => setMode('practice')} 
-                                    disabled={!content}
-                                    className="w-full py-5 bg-indigo-600 text-white font-bold rounded-2xl shadow-lg active:scale-95 transition-all disabled:opacity-50"
+                                    onClick={() => setMode('practice')}
+                                    className={`${themes[theme]} w-full py-5 text-white font-bold rounded-2xl shadow-lg active:scale-95 transition-all`}
                                 >
-                                    EZBERE BAŞLA
+                                    PRATİĞE BAŞLA
                                 </button>
                             </div>
                         ) : (
                             <div className="space-y-6">
+                                {/* Mod Seçici */}
+                                <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                                    {['cloze', 'firstLetter', 'fill', 'quiz'].map(t => (
+                                        <button 
+                                            key={t}
+                                            onClick={() => setPracticeType(t)}
+                                            className={`px-6 py-2 rounded-full font-bold whitespace-nowrap border ${practiceType === t ? themes[theme] + ' text-white border-transparent' : 'bg-white text-slate-500'}`}
+                                        >
+                                            {t === 'cloze' ? 'Gizle' : t === 'firstLetter' ? 'İlk Harf' : t === 'fill' ? 'Yazma' : 'Test'}
+                                        </button>
+                                    ))}
+                                </div>
+
                                 <div className="bg-white p-8 md:p-12 rounded-[2.5rem] shadow-2xl min-h-[400px]">
-                                    <h2 className="text-center text-slate-300 font-bold mb-8 uppercase tracking-widest text-xs">{title || 'Metin'}</h2>
-                                    <div style={{ fontSize: fontSize + 'px' }} className="leading-relaxed font-medium">
-                                        {renderText()}
+                                    <h2 className="text-center text-slate-300 font-bold mb-8 uppercase tracking-widest text-xs">{title || 'EZBER MODU'}</h2>
+                                    <div style={{ fontSize: fontSize + 'px' }} className="leading-relaxed font-medium transition-all">
+                                        {renderPractice()}
                                     </div>
                                 </div>
 
-                                {/* Kontrol Paneli */}
-                                <div className="fixed bottom-6 left-4 right-4 max-w-xl mx-auto bg-white/90 backdrop-blur-md p-6 rounded-3xl shadow-2xl flex flex-col gap-4 border border-white">
-                                    <div className="flex justify-between text-xs font-bold text-slate-400">
-                                        <span>ZORLUK</span>
-                                        <span>%{difficulty} Gizli</span>
+                                {/* Yüzen Kontrol Paneli */}
+                                <div className="fixed bottom-6 left-4 right-4 max-w-xl mx-auto bg-white/90 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white flex flex-col gap-4">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-[10px] font-bold text-slate-400">ZORLUK: %{difficulty}</span>
+                                        <div className="flex bg-slate-100 rounded-lg p-1">
+                                            <button onClick={() => setFontSize(f => Math.max(12, f-2))} className="px-3 font-bold">-</button>
+                                            <button onClick={() => setFontSize(f => Math.min(32, f+2))} className="px-3 font-bold">+</button>
+                                        </div>
                                     </div>
-                                    <input 
-                                        type="range" min="0" max="90" step="10" 
-                                        value={difficulty} 
-                                        onChange={e => setDifficulty(e.target.value)} 
-                                        className="w-full cursor-pointer" 
-                                    />
+                                    <input type="range" min="0" max="90" step="10" value={difficulty} onChange={e => setDifficulty(e.target.value)} className="w-full" />
                                     <div className="flex gap-4">
-                                        <button 
-                                            onClick={speak} 
-                                            className={`flex-1 py-4 rounded-2xl font-bold transition-all ${isSpeaking ? 'bg-red-500 text-white' : 'bg-slate-800 text-white'}`}
-                                        >
+                                        <button onClick={speak} className={`flex-1 py-4 rounded-2xl font-bold text-white shadow-md ${isSpeaking ? 'bg-rose-500' : 'bg-slate-800'}`}>
                                             {isSpeaking ? '🛑 DURDUR' : '🔊 SESLİ DİNLE'}
                                         </button>
-                                        <div className="flex bg-slate-100 rounded-2xl p-1">
-                                            <button onClick={() => setFontSize(f => Math.max(12, f - 2))} className="px-4 font-bold">-</button>
-                                            <button onClick={() => setFontSize(f => Math.min(32, f + 2))} className="px-4 font-bold">+</button>
-                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -145,6 +205,11 @@
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
+
+        // PWA Kaydı
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js');
+        }
     </script>
 </body>
 </html>
