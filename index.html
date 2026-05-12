@@ -4,38 +4,40 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hafıza Ustası Pro</title>
-    <!-- PWA Bağlantısı -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#4f46e5">
-    
-    <!-- Kütüphaneler -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
     <style>
         .no-scrollbar::-webkit-scrollbar { display: none; }
-        .practice-area { transition: all 0.3s ease; }
+        .blur-word { filter: blur(5px); background: #e2e8f0; color: transparent; border-radius: 4px; transition: all 0.3s; }
+        .blur-word:hover { filter: blur(0px); color: #475569; background: #f1f5f9; }
         input[type="range"] { accent-color: #4f46e5; }
-        .blur-word { filter: blur(4px); background: #e2e8f0; color: transparent; border-radius: 4px; user-select: none; }
     </style>
 </head>
-<body class="bg-slate-50 transition-colors duration-500">
+<body class="bg-slate-50">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useCallback, useMemo } = React;
+        const { useState, useEffect, useCallback } = React;
 
         function App() {
-            // Uygulama Durumları
-            const [mode, setMode] = useState('input'); // input, practice
-            const [practiceType, setPracticeType] = useState('cloze'); // cloze, firstLetter, fill, quiz
-            const [content, setContent] = useState('');
-            const [title, setTitle] = useState('');
+            // LocalStorage'dan verileri yükle
+            const getInitialData = () => {
+                const saved = localStorage.getItem('hafiza_ustasi_v1');
+                return saved ? JSON.parse(saved) : { content: '', title: '', theme: 'indigo', fontSize: 18 };
+            };
+
+            const initialData = getInitialData();
+            const [mode, setMode] = useState('input');
+            const [practiceType, setPracticeType] = useState('cloze');
+            const [content, setContent] = useState(initialData.content);
+            const [title, setTitle] = useState(initialData.title);
+            const [theme, setTheme] = useState(initialData.theme);
+            const [fontSize, setFontSize] = useState(initialData.fontSize);
             const [difficulty, setDifficulty] = useState(30);
-            const [fontSize, setFontSize] = useState(18);
-            const [theme, setTheme] = useState('indigo');
             const [isSpeaking, setIsSpeaking] = useState(false);
             const [quizData, setQuizData] = useState(null);
 
@@ -46,56 +48,38 @@
                 slate: 'bg-slate-800'
             };
 
-            // Sesli Okuma (TTS)
+            // Değişiklikleri Kaydet
+            useEffect(() => {
+                const dataToSave = { content, title, theme, fontSize };
+                localStorage.setItem('hafiza_ustasi_v1', JSON.stringify(dataToSave));
+            }, [content, title, theme, fontSize]);
+
             const speak = () => {
-                if (isSpeaking) {
-                    window.speechSynthesis.cancel();
-                    setIsSpeaking(false);
-                    return;
-                }
+                if (isSpeaking) { window.speechSynthesis.cancel(); setIsSpeaking(false); return; }
                 const utterance = new SpeechSynthesisUtterance(content);
                 utterance.lang = 'tr-TR';
-                utterance.rate = 0.9;
                 utterance.onend = () => setIsSpeaking(false);
                 window.speechSynthesis.speak(utterance);
                 setIsSpeaking(true);
             };
 
-            // Test Modu İçin Soru Oluşturma
             const generateQuestion = useCallback(() => {
                 const words = content.split(/\s+/).filter(w => w.length > 3);
-                if (words.length < 5) return;
-                const randomIdx = Math.floor(Math.random() * words.length);
-                const correct = words[randomIdx].replace(/[.,!?;]/g, "");
-                const options = [correct, "elma", "masa", "bulut"].sort(() => Math.random() - 0.5);
-                setQuizData({
-                    context: `"... ${words.slice(Math.max(0, randomIdx-2), randomIdx).join(" ")} [ ? ] ${words.slice(randomIdx+1, randomIdx+3).join(" ")} ..."`,
-                    correct: correct,
-                    options: options
-                });
+                if (words.length < 4) return;
+                const rIdx = Math.floor(Math.random() * words.length);
+                const correct = words[rIdx].replace(/[.,!?;]/g, "");
+                const options = [correct, "yol", "zaman", "ışık"].sort(() => Math.random() - 0.5);
+                setQuizData({ context: `... ${words.slice(Math.max(0, rIdx-2), rIdx).join(" ")} [?] ${words.slice(rIdx+1, rIdx+3).join(" ")} ...`, correct, options });
             }, [content]);
 
-            useEffect(() => {
-                if (practiceType === 'quiz') generateQuestion();
-            }, [practiceType, generateQuestion]);
-
-            // Metin Render Motoru
-            const renderPractice = () => {
+            const renderText = () => {
                 if (practiceType === 'quiz' && quizData) {
                     return (
-                        <div className="space-y-6 animate-pulse-once">
-                            <div className="p-6 bg-slate-100 rounded-2xl text-center italic text-xl">
-                                {quizData.context}
-                            </div>
+                        <div className="space-y-6">
+                            <div className="p-6 bg-slate-50 rounded-2xl text-center italic text-xl border-2 border-dashed border-slate-200">{quizData.context}</div>
                             <div className="grid grid-cols-2 gap-4">
                                 {quizData.options.map((opt, i) => (
-                                    <button 
-                                        key={i}
-                                        onClick={() => opt === quizData.correct ? generateQuestion() : alert("Yanlış!")}
-                                        className="p-4 bg-white border-2 border-slate-200 rounded-xl hover:border-indigo-500 font-bold"
-                                    >
-                                        {opt}
-                                    </button>
+                                    <button key={i} onClick={() => opt === quizData.correct ? generateQuestion() : alert("Tekrar Dene!")} className="p-4 bg-white border-2 border-slate-200 rounded-xl hover:border-indigo-500 font-bold transition-all active:scale-95">{opt}</button>
                                 ))}
                             </div>
                         </div>
@@ -106,16 +90,9 @@
                     <div key={i} className="mb-4 flex flex-wrap gap-x-2">
                         {line.split(/\s+/).map((word, j) => {
                             const isHidden = ((i + 1) * (j + 1) * 31) % 100 < difficulty;
-                            
-                            if (practiceType === 'firstLetter') {
-                                return <span key={j}>{isHidden ? word[0] + '.'.repeat(word.length-1) : word}</span>;
-                            }
-                            if (practiceType === 'cloze' && isHidden) {
-                                return <span key={j} className="blur-word px-1">{word}</span>;
-                            }
-                            if (practiceType === 'fill' && isHidden) {
-                                return <input key={j} type="text" className="border-b-2 border-indigo-400 w-16 outline-none text-center" placeholder="?" />;
-                            }
+                            if (practiceType === 'firstLetter') return <span key={j}>{isHidden ? word[0] + ".." : word}</span>;
+                            if (practiceType === 'cloze' && isHidden) return <span key={j} className="blur-word px-1">{word}</span>;
+                            if (practiceType === 'fill' && isHidden) return <input key={j} type="text" className="border-b-2 border-indigo-300 w-12 text-center outline-none" placeholder="?" />;
                             return <span key={j}>{word}</span>;
                         })}
                     </div>
@@ -123,78 +100,58 @@
             };
 
             return (
-                <div className="min-h-screen pb-40">
-                    <nav className={`${themes[theme]} p-4 text-white shadow-xl sticky top-0 z-50`}>
+                <div className="min-h-screen pb-44">
+                    <nav className={`${themes[theme]} p-4 text-white shadow-lg sticky top-0 z-50 transition-colors`}>
                         <div className="max-w-4xl mx-auto flex justify-between items-center">
-                            <h1 className="font-bold text-xl tracking-tighter">🧠 HAFIZA USTASI PRO</h1>
-                            {mode === 'practice' && (
-                                <button onClick={() => setMode('input')} className="bg-white/20 px-4 py-2 rounded-lg font-bold text-sm">YENİ METİN</button>
-                            )}
+                            <h1 className="font-bold tracking-tight">🧠 HAFIZA USTASI PRO</h1>
+                            {mode === 'practice' && <button onClick={() => setMode('input')} className="bg-white/20 px-4 py-2 rounded-lg text-xs font-bold uppercase">Düzenle</button>}
                         </div>
                     </nav>
 
-                    <main className="max-w-4xl mx-auto p-4 mt-6">
+                    <main className="max-w-4xl mx-auto p-4 mt-4">
                         {mode === 'input' ? (
-                            <div className="bg-white p-6 rounded-3xl shadow-xl space-y-4 border border-slate-200">
-                                <input 
-                                    className="w-full text-2xl font-bold outline-none" 
-                                    placeholder="Başlık (Şiir, Not, Ayet...)" 
-                                    onChange={e => setTitle(e.target.value)}
-                                />
-                                <textarea 
-                                    className="w-full h-80 outline-none resize-none text-lg" 
-                                    placeholder="Metni buraya ekleyin..." 
-                                    onChange={e => setContent(e.target.value)}
-                                />
-                                <div className="flex gap-2">
-                                    {Object.keys(themes).map(t => (
-                                        <button key={t} onClick={() => setTheme(t)} className={`${themes[t]} w-8 h-8 rounded-full border-2 border-white shadow-md`}></button>
-                                    ))}
+                            <div className="bg-white p-6 rounded-3xl shadow-xl space-y-4">
+                                <input className="w-full text-2xl font-bold outline-none" placeholder="Başlık..." value={title} onChange={e => setTitle(e.target.value)} />
+                                <textarea className="w-full h-80 outline-none resize-none text-lg text-slate-600" placeholder="Metni buraya yapıştır..." value={content} onChange={e => setContent(e.target.value)} />
+                                <div className="flex justify-between items-center">
+                                    <div className="flex gap-2">
+                                        {Object.keys(themes).map(t => (
+                                            <button key={t} onClick={() => setTheme(t)} className={`${themes[t]} w-6 h-6 rounded-full border-2 border-white`}></button>
+                                        ))}
+                                    </div>
+                                    <span className="text-xs text-slate-400 font-medium">Değişiklikler otomatik kaydedilir.</span>
                                 </div>
-                                <button 
-                                    onClick={() => setMode('practice')}
-                                    className={`${themes[theme]} w-full py-5 text-white font-bold rounded-2xl shadow-lg active:scale-95 transition-all`}
-                                >
-                                    PRATİĞE BAŞLA
-                                </button>
+                                <button onClick={() => setMode('practice')} disabled={!content} className={`${themes[theme]} w-full py-5 text-white font-bold rounded-2xl shadow-lg disabled:opacity-50 transition-all`}>BAŞLA</button>
                             </div>
                         ) : (
                             <div className="space-y-6">
-                                {/* Mod Seçici */}
-                                <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
                                     {['cloze', 'firstLetter', 'fill', 'quiz'].map(t => (
-                                        <button 
-                                            key={t}
-                                            onClick={() => setPracticeType(t)}
-                                            className={`px-6 py-2 rounded-full font-bold whitespace-nowrap border ${practiceType === t ? themes[theme] + ' text-white border-transparent' : 'bg-white text-slate-500'}`}
-                                        >
-                                            {t === 'cloze' ? 'Gizle' : t === 'firstLetter' ? 'İlk Harf' : t === 'fill' ? 'Yazma' : 'Test'}
+                                        <button key={t} onClick={() => {setPracticeType(t); if(t==='quiz') generateQuestion();}} className={`px-5 py-2 rounded-full font-bold whitespace-nowrap transition-all ${practiceType === t ? themes[theme] + ' text-white' : 'bg-white text-slate-400 border border-slate-100'}`}>
+                                            {t === 'cloze' ? 'Blokla' : t === 'firstLetter' ? 'İlk Harf' : t === 'fill' ? 'Yazım' : 'Test Modu'}
                                         </button>
                                     ))}
                                 </div>
 
-                                <div className="bg-white p-8 md:p-12 rounded-[2.5rem] shadow-2xl min-h-[400px]">
-                                    <h2 className="text-center text-slate-300 font-bold mb-8 uppercase tracking-widest text-xs">{title || 'EZBER MODU'}</h2>
-                                    <div style={{ fontSize: fontSize + 'px' }} className="leading-relaxed font-medium transition-all">
-                                        {renderPractice()}
+                                <div className="bg-white p-8 md:p-12 rounded-[2.5rem] shadow-2xl min-h-[400px] border border-slate-50">
+                                    <h2 className="text-center text-slate-200 font-black mb-10 tracking-[0.2em] text-sm uppercase">{title || 'PRATİK'}</h2>
+                                    <div style={{ fontSize: fontSize + 'px' }} className="leading-relaxed font-medium text-slate-700">
+                                        {renderText()}
                                     </div>
                                 </div>
 
-                                {/* Yüzen Kontrol Paneli */}
-                                <div className="fixed bottom-6 left-4 right-4 max-w-xl mx-auto bg-white/90 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white flex flex-col gap-4">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-[10px] font-bold text-slate-400">ZORLUK: %{difficulty}</span>
-                                        <div className="flex bg-slate-100 rounded-lg p-1">
-                                            <button onClick={() => setFontSize(f => Math.max(12, f-2))} className="px-3 font-bold">-</button>
-                                            <button onClick={() => setFontSize(f => Math.min(32, f+2))} className="px-3 font-bold">+</button>
+                                <div className="fixed bottom-6 left-4 right-4 max-w-xl mx-auto bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] shadow-2xl border border-white/50 space-y-4">
+                                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400">
+                                        <span>GİZLİLİK: %{difficulty}</span>
+                                        <div className="flex gap-4">
+                                            <button onClick={() => setFontSize(f => Math.max(12, f-2))}>A-</button>
+                                            <button onClick={() => setFontSize(f => Math.min(32, f+2))}>A+</button>
                                         </div>
                                     </div>
                                     <input type="range" min="0" max="90" step="10" value={difficulty} onChange={e => setDifficulty(e.target.value)} className="w-full" />
-                                    <div className="flex gap-4">
-                                        <button onClick={speak} className={`flex-1 py-4 rounded-2xl font-bold text-white shadow-md ${isSpeaking ? 'bg-rose-500' : 'bg-slate-800'}`}>
-                                            {isSpeaking ? '🛑 DURDUR' : '🔊 SESLİ DİNLE'}
-                                        </button>
-                                    </div>
+                                    <button onClick={speak} className={`w-full py-4 rounded-2xl font-bold text-white transition-all shadow-lg ${isSpeaking ? 'bg-rose-500' : 'bg-slate-900'}`}>
+                                        {isSpeaking ? 'DURDUR' : '🔊 SESLİ OKU'}
+                                    </button>
                                 </div>
                             </div>
                         )}
@@ -206,7 +163,6 @@
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
 
-        // PWA Kaydı
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js');
         }
